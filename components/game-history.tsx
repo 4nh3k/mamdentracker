@@ -4,14 +4,18 @@ import { useGame } from "@/contexts/game-context"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Clock, TrendingUp, AlertTriangle, RotateCcw, Users, TrendingDown, Trash2 } from "lucide-react"
+import { Clock, TrendingUp, AlertTriangle, RotateCcw, Users, TrendingDown, Trash2, Undo2 } from "lucide-react"
+import { useTranslation } from "@/contexts/language-context"
+import { useLanguage } from "@/contexts/language-context"
 
 export function GameHistory() {
-  const { history, clearHistory } = useGame()
+  const { history, clearHistory, rollbackToAction, lastRollbackIndex } = useGame()
+  const t = useTranslation()
+  const { language } = useLanguage()
 
   const formatTime = (timestamp: number) => {
     const date = new Date(timestamp)
-    return date.toLocaleTimeString("en-US", {
+    return date.toLocaleTimeString(language === "vi" ? "vi-VN" : "en-US", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
@@ -39,13 +43,13 @@ export function GameHistory() {
     <Card className="p-6 h-[calc(100vh-12rem)]">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-xl font-bold">Game History</h2>
+          <h2 className="text-xl font-bold">{t("GAME_HISTORY")}</h2>
           <Clock className="h-5 w-5 text-muted-foreground" />
         </div>
         {history.length > 0 && (
           <Button variant="ghost" size="sm" onClick={clearHistory} className="text-destructive hover:text-destructive">
             <Trash2 className="h-4 w-4 mr-1" />
-            Clear
+            {t("CLEAR")}
           </Button>
         )}
       </div>
@@ -53,42 +57,70 @@ export function GameHistory() {
       <ScrollArea className="h-[calc(100%-3rem)]">
         {history.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-muted-foreground">No actions yet</p>
+            <p className="text-muted-foreground">{t("NO_ACTIONS_YET")}</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {history.map((action) => (
-              <div key={action.id} className="p-4 rounded-lg bg-muted hover:bg-muted/80 transition-colors">
-                <div className="flex items-start gap-3">
-                  <div className="mt-1">{getIcon(action.type)}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm">{action.description}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{formatTime(action.timestamp)}</p>
-                    {action.affectedPlayers.length > 0 && (
-                      <div className="mt-2 space-y-1">
-                        {action.affectedPlayers.map((affected) => (
-                          <div key={affected.playerId} className="flex items-center justify-between text-xs">
-                            <span className="text-muted-foreground">{affected.playerName}</span>
-                            <span
-                              className={
-                                affected.scoreDelta > 0
-                                  ? "text-green-500 font-semibold"
-                                  : affected.scoreDelta < 0
-                                    ? "text-destructive font-semibold"
-                                    : "text-muted-foreground"
-                              }
-                            >
-                              {affected.scoreDelta > 0 && "+"}
-                              {affected.scoreDelta}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+            {history.map((action, index) => {
+              const isAfterRollback = lastRollbackIndex !== null && index < lastRollbackIndex
+
+              return (
+                <div
+                  key={action.id}
+                  className={`p-4 rounded-lg transition-all ${
+                    isAfterRollback ? "bg-muted/40" : "bg-muted hover:bg-muted/80"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`mt-1 ${
+                    isAfterRollback ? "opacity-50" : ""
+                    }`}>{getIcon(action.type)}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`font-medium text-sm ${
+                    isAfterRollback ? "opacity-50" : ""
+                    }`}>{action.description}</p>
+                      <p className={`text-xs text-muted-foreground mt-1 ${
+                    isAfterRollback ? "opacity-50" : ""
+                    }`}>{formatTime(action.timestamp)}</p>
+                      {action.affectedPlayers.length > 0 && (
+                        <div className={`mt-2 space-y-1 ${
+                    isAfterRollback ? "opacity-50" : ""
+                    }`}>
+                          {action.affectedPlayers.map((affected) => (
+                            <div key={affected.playerId} className="flex items-center justify-between text-xs">
+                              <span className="text-muted-foreground">{affected.playerName}</span>
+                              <span
+                                className={
+                                  affected.scoreDelta > 0
+                                    ? "text-green-500 font-semibold"
+                                    : affected.scoreDelta < 0
+                                      ? "text-destructive font-semibold"
+                                      : "text-muted-foreground"
+                                }
+                              >
+                                {affected.scoreDelta > 0 && "+"}
+                                {affected.scoreDelta}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {(index != 0 || isAfterRollback) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => rollbackToAction(action.id)}
+                          className="mt-2 h-7 text-xs opacity-100"
+                        >
+                          <Undo2 className="h-3 w-3 mr-1" />
+                          {t("ROLLBACK")}
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </ScrollArea>

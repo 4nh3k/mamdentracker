@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { useTranslation } from "@/contexts/language-context"
 
 interface SetupModalProps {
   open: boolean
@@ -26,6 +27,8 @@ const presetConfigs = {
 export function SetupModal({ open, onClose }: SetupModalProps) {
   const { players, scoringConfig, settings, addPlayer, removePlayer, setScoringConfig, updateSettings, startGame } =
     useGame()
+  const t = useTranslation()
+
   const [newPlayerName, setNewPlayerName] = useState("")
   const [selectedPreset, setSelectedPreset] = useState<ScoringPreset>(scoringConfig.preset)
   const [customPoints, setCustomPoints] = useState<number[]>(scoringConfig.points)
@@ -70,20 +73,19 @@ export function SetupModal({ open, onClose }: SetupModalProps) {
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-2xl">Game Setup</DialogTitle>
+          <DialogTitle className="text-2xl">{t("GAME_SETUP")}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
-          {/* Players Section */}
           <div className="space-y-4">
             <div>
-              <h3 className="text-lg font-semibold mb-2">Players</h3>
-              <p className="text-sm text-muted-foreground">Add at least 2 players to start</p>
+              <h3 className="text-lg font-semibold mb-2">{t("PLAYERS")}</h3>
+              <p className="text-sm text-muted-foreground">{t("ADD_AT_LEAST_PLAYERS")}</p>
             </div>
 
             <div className="flex gap-2">
               <Input
-                placeholder="Player name"
+                placeholder={t("PLAYER_NAME")}
                 value={newPlayerName}
                 onChange={(e) => setNewPlayerName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddPlayer()}
@@ -111,15 +113,14 @@ export function SetupModal({ open, onClose }: SetupModalProps) {
             </div>
           </div>
 
-          {/* Scoring Configuration */}
           <div className="space-y-4">
             <div>
-              <h3 className="text-lg font-semibold mb-2">Scoring System</h3>
-              <p className="text-sm text-muted-foreground">Choose a preset or create custom points</p>
+              <h3 className="text-lg font-semibold mb-2">{t("SCORING_SYSTEM")}</h3>
+              <p className="text-sm text-muted-foreground">{t("CHOOSE_PRESET")}</p>
             </div>
 
             <div className="space-y-2">
-              <Label>Preset</Label>
+              <Label>{t("PRESET")}</Label>
               <Select value={selectedPreset} onValueChange={handlePresetChange}>
                 <SelectTrigger>
                   <SelectValue />
@@ -136,7 +137,7 @@ export function SetupModal({ open, onClose }: SetupModalProps) {
 
             {selectedPreset === "custom" && (
               <div className="space-y-2">
-                <Label>Custom Points</Label>
+                <Label>{t("CUSTOM_POINTS")}</Label>
                 <div className="flex gap-2">
                   {customPoints.map((point, index) => (
                     <Input
@@ -154,7 +155,7 @@ export function SetupModal({ open, onClose }: SetupModalProps) {
 
             <div className="p-4 rounded-lg bg-muted">
               <p className="text-sm">
-                <span className="font-semibold">Points: </span>
+                <span className="font-semibold">{t("POINTS")}: </span>
                 {customPoints.join(", ")}
               </p>
             </div>
@@ -162,16 +163,16 @@ export function SetupModal({ open, onClose }: SetupModalProps) {
 
           <div className="space-y-4">
             <div>
-              <h3 className="text-lg font-semibold mb-2">Game Settings</h3>
-              <p className="text-sm text-muted-foreground">Configure special actions</p>
+              <h3 className="text-lg font-semibold mb-2">{t("GAME_SETTINGS")}</h3>
+              <p className="text-sm text-muted-foreground">{t("CONFIGURE_SPECIAL_ACTIONS")}</p>
             </div>
 
             <div className="flex items-center justify-between p-4 rounded-lg bg-muted">
               <div className="space-y-0.5">
                 <Label htmlFor="double-loser" className="text-base">
-                  Double Loser's Score
+                  {t("DOUBLE_LOSER_SCORE")}
                 </Label>
-                <p className="text-sm text-muted-foreground">Enable action to double the lowest player's score</p>
+                <p className="text-sm text-muted-foreground">{t("ENABLE_DOUBLE_ACTION")}</p>
               </div>
               <Switch
                 id="double-loser"
@@ -182,7 +183,7 @@ export function SetupModal({ open, onClose }: SetupModalProps) {
           </div>
 
           <Button onClick={handleStartGame} disabled={players.length < 2} className="w-full" size="lg">
-            Start Game
+            {t("START_GAME")}
           </Button>
         </div>
       </DialogContent>

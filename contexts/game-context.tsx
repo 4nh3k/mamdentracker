@@ -25,6 +25,10 @@ export interface GameAction {
     playerName: string
     scoreDelta: number
   }[]
+  snapshot: {
+    players: Player[]
+    doubleMultiplier: boolean
+  }
 }
 
 export interface GameSettings {
@@ -39,6 +43,7 @@ interface GameState {
   selectedPlayerId: string | null
   settings: GameSettings
   doubleMultiplier: boolean
+  lastRollbackIndex: number | null
 }
 
 interface GameContextType extends GameState {
@@ -56,6 +61,7 @@ interface GameContextType extends GameState {
   clearHistory: () => void
   startNewGame: () => void
   toggleDoubleMultiplier: () => void
+  rollbackToAction: (actionId: string) => void
 }
 
 const GameContext = createContext<GameContextType | undefined>(undefined)
@@ -84,6 +90,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       enableDoubleLoser: false,
     },
     doubleMultiplier: false,
+    lastRollbackIndex: null,
   })
 
   useEffect(() => {
@@ -104,6 +111,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
             enableDoubleLoser: parsed.settings?.enableDoubleLoser ?? false,
           },
           doubleMultiplier: parsed.doubleMultiplier || false,
+          lastRollbackIndex: parsed.lastRollbackIndex || null,
         })
       } catch (e) {
         console.error("[v0] Failed to parse stored game state:", e)
@@ -154,7 +162,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const previousPlayerIndex = scorerIndex === 0 ? players.length - 1 : scorerIndex - 1
       const previousPlayer = players[previousPlayerIndex]
 
-      // Apply double multiplier if active
       const actualPoints = prev.doubleMultiplier ? points * 2 : points
 
       scorer.score += actualPoints
@@ -169,13 +176,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
           { playerId: scorer.id, playerName: scorer.name, scoreDelta: actualPoints },
           { playerId: previousPlayer.id, playerName: previousPlayer.name, scoreDelta: -actualPoints },
         ],
+        snapshot: {
+          players: players.map((p) => ({ ...p })),
+          doubleMultiplier: false,
+        },
       }
 
       return {
         ...prev,
         players,
         history: [action, ...prev.history],
-        doubleMultiplier: false, // Reset multiplier after use
+        doubleMultiplier: false,
+        lastRollbackIndex: null,
       }
     })
   }
@@ -188,7 +200,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
       const otherPlayers = players.filter((p) => p.id !== playerId)
 
-      // Apply double multiplier if active
       const actualPoints = prev.doubleMultiplier ? points * 2 : points
       const totalGain = actualPoints * otherPlayers.length
 
@@ -211,13 +222,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
             scoreDelta: -actualPoints,
           })),
         ],
+        snapshot: {
+          players: players.map((p) => ({ ...p })),
+          doubleMultiplier: false,
+        },
       }
 
       return {
         ...prev,
         players,
         history: [action, ...prev.history],
-        doubleMultiplier: false, // Reset multiplier after use
+        doubleMultiplier: false,
+        lastRollbackIndex: null,
       }
     })
   }
@@ -236,26 +252,45 @@ export function GameProvider({ children }: { children: ReactNode }) {
       if (faultyPlayerIndex === -1) return prev
 
       const faultyPlayer = players[faultyPlayerIndex]
+
+      // Calculate the previous player index (who will become current)
       const previousPlayerIndex = faultyPlayerIndex === 0 ? players.length - 1 : faultyPlayerIndex - 1
 
-      const removed = players.splice(faultyPlayerIndex, 1)[0]
-      players.splice(previousPlayerIndex, 0, removed)
+      // Remove the faulty player from their position
+      players.splice(faultyPlayerIndex, 1)
+
+      // Add them to the end
+      players.push(faultyPlayer)
+
+      // Reorder the players:
+      // 1. Previous player becomes current (index 0)
+      // 2. Keep remaining players after fault position in order
+      // 3. Add players before fault position
+      // 4. Faulty player goes last (already at the end of players array)
+      const beforeFault = players.slice(0, previousPlayerIndex)
+      const afterPrevious = players.slice(previousPlayerIndex, players.length - 1)
+      const rotatedPlayers = [...afterPrevious, ...beforeFault, faultyPlayer]
 
       const action: GameAction = {
         id: crypto.randomUUID(),
         timestamp: Date.now(),
         type: "fault",
-        description: `${faultyPlayer.name} faulted and moved position`,
+        description: `${faultyPlayer.name} faulted and moved to end of queue`,
         affectedPlayers: [{ playerId: faultyPlayer.id, playerName: faultyPlayer.name, scoreDelta: 0 }],
+        snapshot: {
+          players: rotatedPlayers.map((p) => ({ ...p })),
+          doubleMultiplier: prev.doubleMultiplier,
+        },
       }
 
       return {
         ...prev,
-        players,
+        players: rotatedPlayers,
         history: [action, ...prev.history],
       }
     })
   }
+
 
   const resetAllPlayers = () => {
     setGameState((prev) => {
@@ -269,12 +304,17 @@ export function GameProvider({ children }: { children: ReactNode }) {
           playerName: p.name,
           scoreDelta: -p.score,
         })),
+        snapshot: {
+          players: prev.players.map((p) => ({ ...p })),
+          doubleMultiplier: prev.doubleMultiplier,
+        },
       }
 
       return {
         ...prev,
         players: prev.players.map((p) => ({ ...p, score: 0 })),
         history: [action, ...prev.history],
+        lastRollbackIndex: null,
       }
     })
   }
@@ -287,26 +327,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }
 
   const selectPlayer = (playerId: string | null) => {
-    setGameState((prev) => {
-      if (!playerId) {
-        return { ...prev, selectedPlayerId: null }
-      }
-
-      const playerIndex = prev.players.findIndex((p) => p.id === playerId)
-      if (playerIndex === -1 || playerIndex === 0) {
-        return { ...prev, selectedPlayerId: playerId }
-      }
-
-      // Rotate the queue so selected player becomes current (position 0)
-      const players = [...prev.players]
-      const rotated = [...players.slice(playerIndex), ...players.slice(0, playerIndex)]
-
-      return {
-        ...prev,
-        players: rotated,
-        selectedPlayerId: playerId,
-      }
-    })
+    setGameState((prev) => ({
+      ...prev,
+      selectedPlayerId: playerId,
+    }))
   }
 
   const updateSettings = (settings: Partial<GameSettings>) => {
@@ -335,6 +359,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
           playerName: p.name,
           scoreDelta: -p.score,
         })),
+        snapshot: {
+          players: prev.players.map((p) => ({ ...p })),
+          doubleMultiplier: prev.doubleMultiplier,
+        },
       }
 
       return {
@@ -342,6 +370,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         players: prev.players.map((p) => ({ ...p, score: 0 })),
         history: [action, ...prev.history],
         selectedPlayerId: null,
+        lastRollbackIndex: null,
       }
     })
   }
@@ -351,6 +380,27 @@ export function GameProvider({ children }: { children: ReactNode }) {
       ...prev,
       doubleMultiplier: !prev.doubleMultiplier,
     }))
+  }
+
+  const rollbackToAction = (actionId: string) => {
+    setGameState((prev) => {
+      const actionIndex = prev.history.findIndex((a) => a.id === actionId)
+      if (actionIndex === -1) return prev
+
+      const action = prev.history[actionIndex]
+
+      if (!action.snapshot || !action.snapshot.players) {
+        console.error("[v0] Cannot rollback: action snapshot is missing or invalid")
+        return prev
+      }
+
+      return {
+        ...prev,
+        players: action.snapshot.players.map((p) => ({ ...p })),
+        doubleMultiplier: action.snapshot.doubleMultiplier,
+        lastRollbackIndex: actionIndex,
+      }
+    })
   }
 
   return (
@@ -371,6 +421,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         clearHistory,
         startNewGame,
         toggleDoubleMultiplier,
+        rollbackToAction,
       }}
     >
       {children}
