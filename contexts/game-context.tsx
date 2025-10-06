@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import { translations, type Language } from "@/lib/translations"
 
 export type ScoringPreset = "3-6-9" | "5-9" | "5-10" | "4-7-10" | "custom"
 
@@ -67,6 +68,16 @@ interface GameContextType extends GameState {
 const GameContext = createContext<GameContextType | undefined>(undefined)
 
 const STORAGE_KEY = "game-management-state"
+const LANGUAGE_PREF_KEY = "game-language"
+
+const getLang = (): Language => {
+  try {
+    const stored = localStorage.getItem(LANGUAGE_PREF_KEY)
+    return stored === "en" ? "en" : "vi"
+  } catch (e) {
+    return "vi"
+  }
+}
 
 const defaultScoringConfigs: Record<ScoringPreset, number[]> = {
   "3-6-9": [1, 2, 3],
@@ -167,11 +178,16 @@ export function GameProvider({ children }: { children: ReactNode }) {
       scorer.score += actualPoints
       previousPlayer.score -= actualPoints
 
+      const lang = getLang()
+      const scoredText = translations[lang]["SCORED"]
+      const pointText = actualPoints === 1 ? translations[lang]["POINT"] : translations[lang]["POINTS_PLURAL"]
+      const doubledText = prev.doubleMultiplier ? ` ${translations[lang]["DOUBLED"]}` : ""
+
       const action: GameAction = {
         id: crypto.randomUUID(),
         timestamp: Date.now(),
         type: "score",
-        description: `${scorer.name} scored ${actualPoints} point${actualPoints !== 1 ? "s" : ""}${prev.doubleMultiplier ? " (doubled)" : ""}`,
+        description: `${scorer.name} ${scoredText} ${actualPoints} ${pointText}(${doubledText})`,
         affectedPlayers: [
           { playerId: scorer.id, playerName: scorer.name, scoreDelta: actualPoints },
           { playerId: previousPlayer.id, playerName: previousPlayer.name, scoreDelta: -actualPoints },
@@ -209,11 +225,17 @@ export function GameProvider({ children }: { children: ReactNode }) {
         player.score -= actualPoints
       })
 
+      const lang = getLang()
+      const tookText = translations[lang]["TOOK_FROM"]
+      const fromAllText = translations[lang]["FROM_ALL_PLAYERS"]
+      const pointText = actualPoints === 1 ? translations[lang]["POINT"] : translations[lang]["POINTS_PLURAL"]
+      const doubledText = prev.doubleMultiplier ? ` ${translations[lang]["DOUBLED"]}` : ""
+
       const action: GameAction = {
         id: crypto.randomUUID(),
         timestamp: Date.now(),
         type: "take-from-all",
-        description: `${scorer.name} took ${actualPoints} point${actualPoints !== 1 ? "s" : ""} from all players${prev.doubleMultiplier ? " (doubled)" : ""}`,
+        description: `${scorer.name} ${tookText} ${actualPoints} ${pointText} ${fromAllText}${doubledText}`,
         affectedPlayers: [
           { playerId: scorer.id, playerName: scorer.name, scoreDelta: totalGain },
           ...otherPlayers.map((p) => ({
@@ -248,34 +270,43 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const recordFault = (playerId: string) => {
     setGameState((prev) => {
       const players = [...prev.players]
+      const n = players.length
       const faultyPlayerIndex = players.findIndex((p) => p.id === playerId)
       if (faultyPlayerIndex === -1) return prev
+      if (n < 2) return prev
 
       const faultyPlayer = players[faultyPlayerIndex]
 
-      // Calculate the previous player index (who will become current)
-      const previousPlayerIndex = faultyPlayerIndex === 0 ? players.length - 1 : faultyPlayerIndex - 1
+      // previous player index in the original ordering
+      const previousPlayerIndex = faultyPlayerIndex === 0 ? n - 1 : faultyPlayerIndex - 1
 
-      // Remove the faulty player from their position
-      players.splice(faultyPlayerIndex, 1)
+      // Build rotated list: start from previous player, then follow circularly
+      // adding all non-faulty players, and finally the faulty player at the end.
+      const rotatedPlayers: Player[] = []
+      rotatedPlayers.push(players[previousPlayerIndex])
 
-      // Add them to the end
-      players.push(faultyPlayer)
+      // add the remaining n-1 non-faulty players in circular order
+      let count = 0
+      let idx = (previousPlayerIndex + 1) % n
+      while (count < n - 1) {
+        if (idx !== faultyPlayerIndex) {
+          rotatedPlayers.push(players[idx])
+        }
+        idx = (idx + 1) % n
+        count++
+      }
 
-      // Reorder the players:
-      // 1. Previous player becomes current (index 0)
-      // 2. Keep remaining players after fault position in order
-      // 3. Add players before fault position
-      // 4. Faulty player goes last (already at the end of players array)
-      const beforeFault = players.slice(0, previousPlayerIndex)
-      const afterPrevious = players.slice(previousPlayerIndex, players.length - 1)
-      const rotatedPlayers = [...afterPrevious, ...beforeFault, faultyPlayer]
+      // finally push the faulty player to the end
+      rotatedPlayers.push(faultyPlayer)
+
+      const lang = getLang()
+      const faultedText = translations[lang]["FAULTED"]
 
       const action: GameAction = {
         id: crypto.randomUUID(),
         timestamp: Date.now(),
         type: "fault",
-        description: `${faultyPlayer.name} faulted and moved to end of queue`,
+        description: `${faultyPlayer.name} ${faultedText}`,
         affectedPlayers: [{ playerId: faultyPlayer.id, playerName: faultyPlayer.name, scoreDelta: 0 }],
         snapshot: {
           players: rotatedPlayers.map((p) => ({ ...p })),
@@ -294,11 +325,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const resetAllPlayers = () => {
     setGameState((prev) => {
+      const lang = getLang()
+      const allResetText = translations[lang]["ALL_SCORES_RESET"]
+
       const action: GameAction = {
         id: crypto.randomUUID(),
         timestamp: Date.now(),
         type: "reset",
-        description: "All scores reset to 0",
+        description: allResetText,
         affectedPlayers: prev.players.map((p) => ({
           playerId: p.id,
           playerName: p.name,
@@ -349,11 +383,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const startNewGame = () => {
     setGameState((prev) => {
+      const lang = getLang()
+      const newGameText = translations[lang]["NEW_GAME_STARTED"]
+
       const action: GameAction = {
         id: crypto.randomUUID(),
         timestamp: Date.now(),
         type: "reset",
-        description: "New game started - all scores reset",
+        description: newGameText,
         affectedPlayers: prev.players.map((p) => ({
           playerId: p.id,
           playerName: p.name,
